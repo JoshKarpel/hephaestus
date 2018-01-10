@@ -16,13 +16,18 @@ def a():
     print('a')
     b()
     recurse(2)
+    b()
+    # b()
+    # b()
 
 
 def b():
     print('IN B', hash(inspect.currentframe()))
     print('b')
-    for x in range(3):
-        c()
+    c()
+    # for x in range(2):
+    #     c()
+    c()
 
 
 def c():
@@ -35,10 +40,10 @@ if __name__ == '__main__':
     with heph.Tracer() as tracer:
         print('WITH BLOCK', hash(inspect.currentframe()))
         a()
-        # recurse(2)
+        recurse(4)
     print('IF NAME MAIN AFTER WITH', hash(inspect.currentframe()))
 
     # print(tracer.function_calls)
     print("\n===== REPORT =====\n")
-    rep = tracer.report(tracer.parent_of_enter_frame_hash)
+    rep = tracer.report()
     print(rep)
