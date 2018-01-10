@@ -4,15 +4,6 @@ import functools
 import collections
 
 
-# class FunctionCall:
-#     def __init__(self, name, frame_hash):
-#         self.name = name
-#         self.frame_hash = frame_hash
-#
-#     def __repr__(self):
-#         return f'{self.name}@{self.frame_hash}'
-
-
 class Node:
     def __init__(self, frame_hash, parent_frame_hash, frame):
         self.frame_hash = frame_hash
@@ -76,23 +67,16 @@ class Tracer:
 
     def __enter__(self):
         parent = get_parent_frame(inspect.currentframe())
-        self.parent_of_enter_frame_hash = hash(get_parent_frame(inspect.currentframe()))
-        self.enter_frame_hash = hash(inspect.currentframe())
-        print('PARENT OF ENTER FRAME', self.parent_of_enter_frame_hash)
-        print('ENTER FRAME', self.enter_frame_hash)
+
         sys.setprofile(functools.partial(tracefunc, tracer = self))
 
-        self.root_node = Node(self.parent_of_enter_frame_hash, None, parent)
+        self.root_node = Node(hash(parent), None, parent)
         self.frame_hash_to_node[hash(self.root_node)] = self.root_node
-
-        print(self.frame_hash_to_node)
 
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         sys.setprofile(None)
-        self.exit_frame_hash = hash(inspect.currentframe())
-        print('EXIT FRAME', self.exit_frame_hash)
 
     def report(self):
         rep = self.root_node.report()
