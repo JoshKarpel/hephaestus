@@ -54,11 +54,20 @@ def b():
     # for x in range(2):
     #     c()
     c()
+    long()
 
 
 def c():
     # print('IN C', hash(inspect.currentframe()))
     print('c')
+
+
+def long():
+    x = 0
+    for _ in range(1_000_000):
+        x += 1
+
+    print(x)
 
 
 if __name__ == '__main__':
