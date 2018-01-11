@@ -4,6 +4,7 @@ import functools
 import collections
 import gc
 import copy
+import os
 
 
 class Node:
@@ -19,22 +20,32 @@ class Node:
         return self.frame_hash
 
     def __repr__(self):
-        args = ', '.join(f'{arg} = {repr(val)}' for arg, val in self.locals.items())
-
         pre = ''
         if 'self' in self.locals:
             pre = self.locals['self'].__class__.__name__ + '.'
+        elif 'cls' in self.locals:
+            pre = self.locals['cls'].__name__ + '.'
+
+        args = ', '.join(f'{arg} = {repr(val)}'
+                         for arg, val
+                         in reversed(tuple(self.locals.items()))
+                         if arg not in ('cls',))
 
         return f'{pre}{self.frame.f_code.co_name}({args})'
 
     def report(self):
+        lines = self._lines()
+        lines = self._cleanup(lines)
+        return '\n'.join(lines)
+
+    def _lines(self):
         lines = []
         for child, report in ((child, child.report()) for child in self.children):
             lines.append(f'├─ {str(child)}')
-            lines.extend('│  ' + line for line in report.split('\n') if line != '')
+            if report != '':
+                lines.extend(f'│  {line}' for line in report.split('\n'))
 
-        lines = self._cleanup(lines)
-        return '\n'.join(lines)
+        return lines
 
     def _cleanup(self, lines):
         for index, line in reversed(list(enumerate(lines))):
@@ -49,25 +60,10 @@ class Node:
 
 def tracefunc(frame, event, arg, tracer):
     if event == 'call':
-        if frame.f_code.co_name in ('currentframe',):  # ignore calls to inspect.currentframe()
-            return
         if 'hephaestus.py' in frame.f_code.co_filename:  # ignore any function calls in this module
             return
 
-        # print(frame.f_locals)
-        # print(frame.f_code)
-        # print(frame.f_code.co_varnames)
-        # print(inspect.signature(frame.f_code))
-
         parent = frame.f_back
-
-        # func = parent.f_globals[frame.f_code.co_name]
-        # print(func)
-        # print(type(inspect.signature(func)))
-        # print(tuple(inspect.signature(func).parameters.keys()))
-
-        # func = giveupthefunc(frame)
-        # print(func)
 
         try:
             node = tracer.frame_hash_to_node[hash(frame)]
@@ -75,8 +71,31 @@ def tracefunc(frame, event, arg, tracer):
             node = Node(hash(frame), parent, frame)
             tracer.frame_hash_to_node[hash(frame)] = node
 
-        # print(tracer.frame_hash_to_node.keys())
         tracer.frame_hash_to_node[hash(parent)].children.append(node)
+
+
+class TraceFunction:
+    def __init__(self, tracer, ignored_funcnames = (), ignored_filenames = ()):
+        self.tracer = tracer
+        self.ignored_funcnames = ignored_funcnames
+        self.ignored_filenames = ('hephaestus.py',) + ignored_filenames
+
+    def __call__(self, frame, event, arg):
+        if event == 'call':
+            if frame.f_code.co_name in self.ignored_funcnames:
+                return
+            if os.path.basename(frame.f_code.co_filename) in self.ignored_filenames:
+                return
+
+            parent = frame.f_back
+
+            try:
+                node = self.tracer.frame_hash_to_node[hash(frame)]
+            except KeyError:
+                node = Node(hash(frame), parent, frame)
+                self.tracer.frame_hash_to_node[hash(frame)] = node
+
+            self.tracer.frame_hash_to_node[hash(parent)].children.append(node)
 
 
 def get_parent_frame(frame):
@@ -85,39 +104,36 @@ def get_parent_frame(frame):
 
 class Tracer:
     def __init__(self):
-        self.function_calls = collections.defaultdict(list)
         self.frame_hash_to_node = {}
 
     def __enter__(self):
         parent = get_parent_frame(inspect.currentframe())
 
-        sys.setprofile(functools.partial(tracefunc, tracer = self))
+        sys.setprofile(TraceFunction(self))
 
-        # self.root_node = Node(hash(parent), None, parent)
         self.root_node = Node(hash(parent), get_parent_frame(parent), parent)
         self.frame_hash_to_node[hash(parent)] = self.root_node
 
         return self
 
+    start = __enter__
+
     def __exit__(self, exc_type, exc_val, exc_tb):
+        self.stop()
+
+    def stop(self):
         sys.setprofile(None)
 
     def report(self):
-        rep = self.root_node.report()
-        rep = ['│' + line[1:] for line in rep.split('\n')]
-        return '\n'.join(('┌─ <START TRACE>', *rep, '└─ <END TRACE>'))
+        proto_report = self.root_node.report()
 
+        # make sure we've got a solid line on far left
+        rep_lines = ['│' + line[1:] for line in proto_report.split('\n')]
 
-def giveupthefunc(frame):
-    code = frame.f_code
-    globs = frame.f_globals
-    functype = type(lambda: 0)
-    funcs = []
-    for func in gc.get_referrers(code):
-        if type(func) is functype:
-            if getattr(func, "func_code", None) is code:
-                if getattr(func, "func_globals", None) is globs:
-                    funcs.append(func)
-                    if len(funcs) > 1:
-                        return None
-    return funcs[0] if funcs else None
+        rep = '\n'.join((
+            '┌─<START>',
+            *rep_lines,
+            '└─<END>',
+        ))
+
+        return rep
