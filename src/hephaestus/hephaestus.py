@@ -1,6 +1,7 @@
 import inspect
 import sys
 import os
+import time
 
 
 def get_id():
@@ -21,6 +22,8 @@ class Node:
         self.children = []
         self.calls = []
         self.locals = dict(self.frame.f_locals)  # dict freezes it just after function call, before any other local variables can be created!
+        self.start_time = None
+        self.elapsed_time = None
         self.id = next(get_id)
 
     def __hash__(self):
@@ -33,12 +36,14 @@ class Node:
         elif 'cls' in self.locals:
             pre = self.locals['cls'].__name__ + '.'
 
-        args = ', '.join(f'{arg} = {repr(val)}'
+        args = ', '.join(fr'{arg} = {repr(val)}'.replace('\n', '')
                          for arg, val
                          in reversed(tuple(self.locals.items()))
                          if arg not in ('cls',))
 
-        return f'{pre}{self.frame.f_code.co_name}({args})'
+        own_time = self.elapsed_time - sum(child.elapsed_time for child in self.children)
+
+        return fr'{pre}{get_function_name(self.frame)}({args}) | {self.elapsed_time:6f} s | {own_time:6f} s'
 
     def report(self):
         lines = self._lines()
@@ -89,35 +94,32 @@ class Node:
         return lines
 
 
-def tracefunc(frame, event, arg, tracer):
-    if event == 'call':
-        if 'hephaestus.py' in frame.f_code.co_filename:  # ignore any function calls in this module
-            return
+def get_parent_frame(frame):
+    return frame.f_back
 
-        parent = frame.f_back
 
-        try:
-            node = tracer.frame_hash_to_node[hash(frame)]
-        except KeyError:
-            node = Node(hash(frame), parent, frame)
-            tracer.frame_hash_to_node[hash(frame)] = node
+def get_function_name(frame):
+    return frame.f_code.co_name
 
-        tracer.frame_hash_to_node[hash(parent)].children.append(node)
+
+def get_file_name(frame):
+    return os.path.basename(frame.f_code.co_filename)
 
 
 class TraceFunction:
-    def __init__(self, tracer, ignored_funcnames = (), ignored_filenames = ()):
+    def __init__(self, tracer, ignored_funcnames = (), ignored_filenames = (), timing_func = time.perf_counter):
         self.tracer = tracer
         self.ignored_funcnames = ignored_funcnames
         self.ignored_filenames = ('hephaestus.py',) + ignored_filenames
+        self.timing_func = timing_func
 
     def __call__(self, frame, event, arg):
-        if event == 'call':
-            if frame.f_code.co_name in self.ignored_funcnames:
-                return
-            if os.path.basename(frame.f_code.co_filename) in self.ignored_filenames:
-                return
+        if get_function_name(frame) in self.ignored_funcnames:
+            return
+        if get_file_name(frame) in self.ignored_filenames:
+            return
 
+        if event == 'call':
             parent = frame.f_back
 
             try:
@@ -128,9 +130,11 @@ class TraceFunction:
 
             self.tracer.frame_hash_to_node[hash(parent)].children.append(node)
 
+            node.start_time = self.timing_func()
 
-def get_parent_frame(frame):
-    return frame.f_back
+        if event == 'return':
+            node = self.tracer.frame_hash_to_node[hash(frame)]
+            node.elapsed_time = self.timing_func() - node.start_time
 
 
 class Tracer:
