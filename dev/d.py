@@ -4,9 +4,18 @@ import sys
 import hephaestus as heph
 
 
+class Foo:
+    def bar(self, clap = '\n'):
+        print('bar')
+
+    def __repr__(self):
+        return 'shazbot'
+
+
 def recurse(level):
     print('IN LEVEL', level, hash(inspect.currentframe()))
     print(level)
+    joe = 'foo'
     if level:
         recurse(level - 1)
 
@@ -17,6 +26,9 @@ def a():
     b()
     recurse(2)
     b()
+
+    foo = Foo()
+    foo.bar()
     # b()
     # b()
 
