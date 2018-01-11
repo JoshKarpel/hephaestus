@@ -29,14 +29,14 @@ class Node:
         elif 'cls' in self.locals:
             pre = self.locals['cls'].__name__ + '.'
 
-        args = ', '.join(f'{arg} = {repr(val)}'
+        args = ', '.join(fr'{arg} = {repr(val)}'.replace('\n', '')
                          for arg, val
                          in reversed(tuple(self.locals.items()))
                          if arg not in ('cls',))
 
         own_time = self.elapsed_time - sum(child.elapsed_time for child in self.children)
 
-        return f'{pre}{self.frame.f_code.co_name}({args}) | {self.elapsed_time:6f} s | {own_time:6f} s'
+        return fr'{pre}{get_function_name(self.frame)}({args}) | {self.elapsed_time:6f} s | {own_time:6f} s'
 
     def report(self):
         lines = self._lines()
@@ -63,6 +63,18 @@ class Node:
         return lines
 
 
+def get_parent_frame(frame):
+    return frame.f_back
+
+
+def get_function_name(frame):
+    return frame.f_code.co_name
+
+
+def get_file_name(frame):
+    return os.path.basename(frame.f_code.co_filename)
+
+
 class TraceFunction:
     def __init__(self, tracer, ignored_funcnames = (), ignored_filenames = (), timing_func = time.perf_counter):
         self.tracer = tracer
@@ -71,9 +83,9 @@ class TraceFunction:
         self.timing_func = timing_func
 
     def __call__(self, frame, event, arg):
-        if frame.f_code.co_name in self.ignored_funcnames:
+        if get_function_name(frame) in self.ignored_funcnames:
             return
-        if os.path.basename(frame.f_code.co_filename) in self.ignored_filenames:
+        if get_file_name(frame) in self.ignored_filenames:
             return
 
         if event == 'call':
@@ -92,10 +104,6 @@ class TraceFunction:
         if event == 'return':
             node = self.tracer.frame_hash_to_node[hash(frame)]
             node.elapsed_time = self.timing_func() - node.start_time
-
-
-def get_parent_frame(frame):
-    return frame.f_back
 
 
 class Tracer:
