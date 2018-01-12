@@ -21,7 +21,7 @@ class Node:
         self.frame = frame
         self.children = []
         self.calls = []
-        self.locals = dict(self.frame.f_locals)  # dict freezes it just after function call, before any other local variables can be created!
+        self.func_args = dict(self.frame.f_locals)  # dict freezes it just after function call, before any other local variables can be created!
         self.start_time = None
         self.elapsed_time = None
         self.id = next(get_id)
@@ -31,19 +31,45 @@ class Node:
 
     def s(self):
         pre = ''
-        if 'self' in self.locals:
-            pre = self.locals['self'].__class__.__name__ + '.'
-        elif 'cls' in self.locals:
-            pre = self.locals['cls'].__name__ + '.'
+        if 'self' in self.func_args:
+            pre = self.func_args['self'].__class__.__name__ + '.'
+        elif 'cls' in self.func_args:
+            pre = self.func_args['cls'].__name__ + '.'
 
-        args = ', '.join(fr'{arg} = {repr(val)}'.replace('\n', '')
-                         for arg, val
-                         in reversed(tuple(self.locals.items()))
-                         if arg not in ('cls',))
+        args = ', '.join(
+            fr'{arg} = {repr(val)}'.replace('\n', '')
+            for arg, val
+            in reversed(tuple(self.func_args.items()))
+            if arg not in ('cls',)
+        )
 
         own_time = self.elapsed_time - sum(child.elapsed_time for child in self.children)
 
         return fr'{pre}{get_function_name(self.frame)}({args}) | {self.elapsed_time:6f} s | {own_time:6f} s'
+
+    def html(self):
+        pre = ''
+        if 'self' in self.func_args:
+            pre = self.func_args['self'].__class__.__name__ + '.'
+        elif 'cls' in self.func_args:
+            pre = self.func_args['cls'].__name__ + '.'
+
+        args = 'Arguments: ' + ', '.join(
+            fr'{arg} = {repr(val)}'.replace('\n', '')
+            for arg, val
+            in reversed(tuple(self.func_args.items()))
+            if arg not in ('self', 'cls')
+        ).replace('"', '&quot;').replace("'", '&apos;').replace('<', '&lt;').replace('>', '&gt;')
+
+        postfix = ''
+        if 'self' in self.func_args:
+            postfix += f'(self = {repr(self.func_args["self"])})'
+
+        own_time = self.elapsed_time - sum(child.elapsed_time for child in self.children)
+        time_str = f'Elapsed: {self.elapsed_time:6f} s | Own: {own_time:6f} s'
+
+        inner = f'{pre}{get_function_name(self.frame)}{postfix}'.replace('<', '&lt;').replace('>', '&gt;')
+        return fr'<span title = "{time_str}&#013;{args}">{inner}</span>'
 
     def report(self):
         lines = self._lines()
@@ -70,14 +96,14 @@ class Node:
         for child, report in ((child, child.report_html(depth = depth + 1)) for child in self.children):
             if report != '':
                 lines.append(f'<li>')
-                lines.append(f'  <label for={self.id}>{child.s()}</label>')
+                lines.append(f'  <label for={self.id}>{child.html()}</label>')
                 lines.append(f'  <input type="checkbox" id={self.id}/>')
                 lines.append(f'  <ol>')
                 lines.extend(f'  {line}' for line in report.split('\n'))
                 lines.append(f'  </ol>')
                 lines.append(f'</li>')
             else:
-                lines.append(f'<li class="file"> {child.s()}</li>')
+                lines.append(f'<li class="file"> {child.html()}</li>')
 
         lines = ['  ' + line for line in lines]
         return lines
@@ -192,12 +218,26 @@ class Tracer:
         return rep
 
     def report_html(self):
-        rep = self.root_node.report_html()
+        body = self.root_node.report_html()
         # rep = rep.replace(' ', '&ensp;')
         # rep = rep.replace('\n', '<br>')
-        rep = '<body>\n<ol class="tree">\n' + rep + '\n</ol>\n</body>'
+        # rep = '<body>\n<h1>Hephaestus Report</h1>\n<ol class="tree">\n' + rep + '\n</ol>\n</body>'
 
-        rep = HEADER + STYLE + SCRIPT + rep + FOOTER
+        # rep = HEADER + STYLE + SCRIPT + rep + FOOTER
+        rep = '\n'.join((
+            HEADER,
+            STYLE,
+            SCRIPT,
+            '<body>',
+            '<h1>Hephaestus Report</h1><br>',
+            '<ol class="tree">',
+            body,
+            '</ol>',
+            '</body>',
+            FOOTER,
+        ))
+
+        # rep = rep.replace(' ', '&nbsp;')
 
         return rep
 
@@ -209,96 +249,33 @@ HEADER = """
 <title>Hephaestus Report</title>
 """
 
-# STYLE = """
-# <style type="text/css">
-# body {
-#     font-family: "Courier New", Courier, monospace;
-#     font-size: 100%;
-# }
-# * {
-#     margin: 0;
-#     padding: 0;
-# }
-# input {
-#     font-size: 1em;
-# }
-# ol.tree {
-#     padding-left: 30px;
-# }
-# li {
-#     list-style-type: none;
-#     position: relative;
-#     margin-left: -15px;
-#     display: inline-block;
-# }
-# li label {
-#     padding-left: 37px;
-#     cursor: pointer;
-# }
-# li input {
-#     width: 1em;
-#     height: 1em;
-#     position: absolute;
-#     left: -0.5em;
-#     top: 0;
-#     opacity: 0;
-#     cursor: pointer;
-# }
-# li input + ol {
-#     height: 1em;
-#     margin: -16px 0 0 -44px;
-# }
-# li input + ol > li {
-#     display: none;
-#     margin-left: -14px !important;
-#     padding-left: 1px;
-# }
-# li.file {
-#     margin-left: -1px !important;
-# }
-# li input:checked + ol {
-#     height: auto;
-#     margin: -21px 0 0 -44px;
-#     padding: 25px 0 0 80px;
-# }
-# li input:checked + ol > li {
-#     margin:0 0 0.063em;
-# }
-# li input:checked + ol > li:first-child {
-#     margin:0 0 0.125em;
-# }
-# </style>
-# """
-
 STYLE = """
 <style type="text/css">
 * {
   margin: 0;
   padding: 0;
+  white-space: nowrap;
 }
 body {
-  padding: 100px;
-  background: #929292;
+  padding-top: 20px;
+  padding-left: 20px;
   font-size: 100%;
-  font-family: "Arial";
+  font-family: "Courier New", Courier, monospace;
 }
 input {
   font-size: 1em;
 }
 ol.tree {
-  padding-left: 30px;
+  padding-left: 20px;
 }
 li {
   list-style-type: none;
-  color: #fff;
   position: relative;
   margin-left: -15px;
 }
 li label {
-  padding-left: 37px;
+  padding-left: 20px;
   cursor: pointer;
-  background: url("https://www.thecssninja.com/demo/css_tree/folder-horizontal.png")
-    no-repeat 15px 2px;
   display: block;
 }
 li input {
@@ -322,15 +299,7 @@ li input + ol > li {
   padding-left: 1px;
 }
 li.file {
-  margin-left: -1px !important;
-}
-li.file a {
-  display: inline-block;
-  padding-left: 21px;
-  color: #fff;
-  text-decoration: none;
-  background: url("https://www.thecssninja.com/demo/css_tree/document.png")
-    no-repeat 0 0;
+  padding-left: 20px;
 }
 li input:checked + ol {
   height: auto;
