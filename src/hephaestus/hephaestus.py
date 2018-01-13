@@ -65,19 +65,19 @@ class Node:
         inner = f'{pre}{get_function_name(self.frame)}'.replace('<', '&lt;').replace('>', '&gt;')
         return fr'<span title = "{self.frame.f_code.co_filename}:{self.frame.f_code.co_firstlineno}&#013;{time_str}&#013;{args}">{inner}</span>'
 
-    def report(self):
-        lines = self._lines()
-        lines = self._cleanup(lines)
+    def report_text(self):
+        lines = self._lines_text()
+        lines = self._cleanup_text(lines)
         return '\n'.join(lines)
 
     def report_html(self, depth = 0):
         lines = self._lines_html(depth = depth)
-        lines = self._cleanup(lines)
+        lines = self._cleanup_text(lines)
         return '\n'.join(lines)
 
-    def _lines(self):
+    def _lines_text(self):
         lines = []
-        for child, report in ((child, child.report()) for child in self.children):
+        for child, report in ((child, child.report_text()) for child in self.children):
             lines.append(f'├─ {child.text()}')
             if report != '':
                 lines.extend(f'│  {line}' for line in report.split('\n'))
@@ -102,9 +102,8 @@ class Node:
         lines = ['  ' + line for line in lines]
         return lines
 
-    def _cleanup(self, lines):
+    def _cleanup_text(self, lines):
         for index, line in reversed(list(enumerate(lines))):
-            # print(line)
             if line[0] == '├':  # this is the last branch on this level, replace it with endcap and break
                 lines[index] = line.replace('├', '└')
                 break
@@ -134,27 +133,32 @@ class TraceFunction:
         self.timing_func = timing_func
 
     def __call__(self, frame, event, arg):
-        if get_function_name(frame) in self.ignored_funcnames:
-            return
-        if get_file_name(frame) in self.ignored_filenames:
+        if any((get_function_name(frame) in self.ignored_funcnames,
+                get_file_name(frame) in self.ignored_filenames,)):
             return
 
         if event == 'call':
-            parent = frame.f_back
+            self.handle_call(frame, arg)
+        elif event == 'return':
+            self.handle_return(frame, arg)
 
-            try:
-                node = self.tracer.frame_hash_to_node[hash(frame)]
-            except KeyError:
-                node = Node(hash(frame), parent, frame)
-                self.tracer.frame_hash_to_node[hash(frame)] = node
+    def handle_call(self, frame, arg):
+        parent = frame.f_back
 
-            self.tracer.frame_hash_to_node[hash(parent)].children.append(node)
+        try:
+            this_node = self.tracer.frame_hash_to_node[hash(frame)]
+        except KeyError:
+            this_node = Node(hash(frame), parent, frame)
+            self.tracer.frame_hash_to_node[hash(frame)] = this_node
 
-            node.start_time = self.timing_func()
+        parent_node = self.tracer.frame_hash_to_node[hash(parent)]
+        parent_node.children.append(this_node)
 
-        if event == 'return':
-            node = self.tracer.frame_hash_to_node[hash(frame)]
-            node.elapsed_time = self.timing_func() - node.start_time
+        this_node.start_time = self.timing_func()
+
+    def handle_return(self, frame, arg):
+        this_node = self.tracer.frame_hash_to_node[hash(frame)]
+        this_node.elapsed_time = self.timing_func() - this_node.start_time
 
 
 class Tracer:
@@ -179,8 +183,8 @@ class Tracer:
     def stop(self):
         sys.setprofile(None)
 
-    def get_report_lines(self):
-        proto_report = self.root_node.report()
+    def get_report_lines_text(self):
+        proto_report = self.root_node.report_text()
 
         # make sure we've got a solid line on far left
         rep_lines = ['│' + line[1:] for line in proto_report.split('\n')]
@@ -192,15 +196,14 @@ class Tracer:
     def get_report_lines_html(self):
         proto_report = self.root_node.report_html()
 
-        # make sure we've got a solid line on far left
         rep_lines = ['│' + line[1:] for line in proto_report.split('\n')]
         num_lines = len(str(len(rep_lines)))
         rep_lines = [f'{str(n).rjust(num_lines, "0")} {line}' for n, line in enumerate(rep_lines)]
 
         return rep_lines
 
-    def report(self):
-        rep_lines = self.get_report_lines()
+    def report_text(self):
+        rep_lines = self.get_report_lines_text()
         num_lines = len(str(len(rep_lines)))
 
         rep = '\n'.join((
@@ -213,15 +216,10 @@ class Tracer:
 
     def report_html(self):
         body = self.root_node.report_html()
-        # rep = rep.replace(' ', '&ensp;')
-        # rep = rep.replace('\n', '<br>')
-        # rep = '<body>\n<h1>Hephaestus Report</h1>\n<ol class="tree">\n' + rep + '\n</ol>\n</body>'
 
-        # rep = HEADER + STYLE + SCRIPT + rep + FOOTER
         rep = '\n'.join((
             HEADER,
             STYLE,
-            SCRIPT,
             '<body>',
             '<h1>Hephaestus Report</h1><br>',
             '<ol class="tree">',
@@ -230,8 +228,6 @@ class Tracer:
             '</body>',
             FOOTER,
         ))
-
-        # rep = rep.replace(' ', '&nbsp;')
 
         return rep
 
@@ -311,23 +307,6 @@ li input:checked + ol > li:first-child {
 }
 
 </style>
-"""
-
-SCRIPT = """
-<script>
-    function toggle(element) {
-        var children = element.children;
-        var child;
-        for (i = 1; i < children.length; i++) {
-            child = children[i];
-            if (child.style.display != 'inline') {
-                child.style.display = 'inline';
-            } else {
-                child.style.display = 'none';
-            }
-        }
-    }
-</script>
 """
 
 FOOTER = """

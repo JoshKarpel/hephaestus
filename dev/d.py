@@ -88,5 +88,5 @@ if __name__ == '__main__':
 
     # print(tracer.function_calls)
     print("\n===== REPORT =====\n")
-    rep = tracer.report()
+    rep = tracer.report_text()
     print(rep)
