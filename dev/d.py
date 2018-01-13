@@ -12,7 +12,7 @@ class Foo:
         pass
 
     def __repr__(self):
-        return 'shazbot'
+        return 'Foo(shazbot)'
 
     @classmethod
     def classmethod(cls, a = 5):

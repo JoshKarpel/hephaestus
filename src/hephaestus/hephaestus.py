@@ -29,10 +29,10 @@ class Node:
     def __hash__(self):
         return self.frame_hash
 
-    def s(self):
+    def text(self):
         pre = ''
         if 'self' in self.func_args:
-            pre = self.func_args['self'].__class__.__name__ + '.'
+            pre = repr(self.func_args['self']) + '.'
         elif 'cls' in self.func_args:
             pre = self.func_args['cls'].__name__ + '.'
 
@@ -40,17 +40,15 @@ class Node:
             fr'{arg} = {repr(val)}'.replace('\n', '')
             for arg, val
             in reversed(tuple(self.func_args.items()))
-            if arg not in ('cls',)
+            if arg not in ('self', 'cls',)
         )
 
-        own_time = self.elapsed_time - sum(child.elapsed_time for child in self.children)
-
-        return fr'{pre}{get_function_name(self.frame)}({args}) | {self.elapsed_time:6f} s | {own_time:6f} s'
+        return fr'{pre}{get_function_name(self.frame)}({args})'
 
     def html(self):
         pre = ''
         if 'self' in self.func_args:
-            pre = self.func_args['self'].__class__.__name__ + '.'
+            pre = repr(self.func_args['self']) + '.'
         elif 'cls' in self.func_args:
             pre = self.func_args['cls'].__name__ + '.'
 
@@ -61,15 +59,11 @@ class Node:
             if arg not in ('self', 'cls')
         ).replace('"', '&quot;').replace("'", '&apos;').replace('<', '&lt;').replace('>', '&gt;')
 
-        postfix = ''
-        if 'self' in self.func_args:
-            postfix += f'(self = {repr(self.func_args["self"])})'
-
         own_time = self.elapsed_time - sum(child.elapsed_time for child in self.children)
         time_str = f'Elapsed: {self.elapsed_time:6f} s | Own: {own_time:6f} s'
 
-        inner = f'{pre}{get_function_name(self.frame)}{postfix}'.replace('<', '&lt;').replace('>', '&gt;')
-        return fr'<span title = "{time_str}&#013;{args}">{inner}</span>'
+        inner = f'{pre}{get_function_name(self.frame)}'.replace('<', '&lt;').replace('>', '&gt;')
+        return fr'<span title = "{self.frame.f_code.co_filename}:{self.frame.f_code.co_firstlineno}&#013;{time_str}&#013;{args}">{inner}</span>'
 
     def report(self):
         lines = self._lines()
@@ -84,7 +78,7 @@ class Node:
     def _lines(self):
         lines = []
         for child, report in ((child, child.report()) for child in self.children):
-            lines.append(f'├─ {child.s()}')
+            lines.append(f'├─ {child.text()}')
             if report != '':
                 lines.extend(f'│  {line}' for line in report.split('\n'))
 
