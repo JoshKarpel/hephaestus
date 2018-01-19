@@ -14,6 +14,10 @@ def get_id():
 get_id = get_id()  # initialize the generator
 
 
+def escape_html(string):
+    return string.replace('"', '&quot;').replace("'", '&apos;').replace('<', '&lt;').replace('>', '&gt;')
+
+
 class Node:
     def __init__(self, frame_hash, parent_frame, frame):
         self.frame_hash = frame_hash
@@ -55,23 +59,25 @@ class Node:
         args = 'Arguments: ' + ', '.join(
             fr'{arg} = {repr(val)}'.replace('\n', '')
             for arg, val
-            in reversed(tuple(self.func_args.items()))
+            in reversed(tuple(self.func_args.items()))  # local namespace seems to be populated in reverse for some reason
             if arg not in ('self', 'cls')
-        ).replace('"', '&quot;').replace("'", '&apos;').replace('<', '&lt;').replace('>', '&gt;')
+        )
+        args = escape_html(args)
 
         own_time = self.elapsed_time - sum(child.elapsed_time for child in self.children)
         time_str = f'Elapsed: {self.elapsed_time:6f} s | Own: {own_time:6f} s'
 
-        inner = f'{pre}{get_function_name(self.frame)}'.replace('<', '&lt;').replace('>', '&gt;')
-        return fr'<span title = "{self.frame.f_code.co_filename}:{self.frame.f_code.co_firstlineno}&#013;{time_str}&#013;{args}">{inner}</span>'
+        inner = escape_html(f'{pre}{get_function_name(self.frame)}')
+        title = f'{self.frame.f_code.co_filename}:{self.frame.f_code.co_firstlineno}&#013;{time_str}&#013;{args}'
+        return fr'<span title = "{title}">{inner}</span>'
 
     def report_text(self):
         lines = self._lines_text()
         lines = self._cleanup_text(lines)
         return '\n'.join(lines)
 
-    def report_html(self, depth = 0):
-        lines = self._lines_html(depth = depth)
+    def report_html(self):
+        lines = self._lines_html()
         lines = self._cleanup_text(lines)
         return '\n'.join(lines)
 
@@ -85,9 +91,9 @@ class Node:
         return lines
 
     # https://codepen.io/anchen/pen/rGDjI
-    def _lines_html(self, depth = 0):
+    def _lines_html(self):
         lines = []
-        for child, report in ((child, child.report_html(depth = depth + 1)) for child in self.children):
+        for child, report in ((child, child.report_html()) for child in self.children):
             if report != '':
                 lines.append(f'<li>')
                 lines.append(f'  <label for={self.id}>{child.html()}</label>')
@@ -109,7 +115,6 @@ class Node:
                 break
             else:  # not yet at last branch, continue cleanup
                 lines[index] = line.replace('│', ' ', 1)
-        # print()
         return lines
 
 
