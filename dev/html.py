@@ -3,8 +3,13 @@ import sys
 
 import hephaestus as heph
 
+import imported
+
 
 class Foo:
+    def __init__(self, name):
+        self.name = name
+
     def bar(self, clap = '\n', x = 10, a = 'foo'):
         print('bar')
 
@@ -12,7 +17,7 @@ class Foo:
         pass
 
     def __repr__(self):
-        return 'shazbot'
+        return self.name
 
     @classmethod
     def classmethod(cls, a = 5):
@@ -22,42 +27,42 @@ class Foo:
     def staticmethod(b = 3):
         pass
 
+    def changename(self):
+        self.name = self.name.upper()
+
 
 def recurse(level):
-    # print('IN LEVEL', level, hash(inspect.currentframe()))
     print(level)
-    joe = 'foo'
     if level:
         recurse(level - 1)
 
 
 def a():
-    # print('IN A', hash(inspect.currentframe()))
     print('a')
     b()
-    # recurse(2)
-    # b()
+    recurse(2)
+    b()
 
-    # foo = Foo()
-    # foo.bar()
-    # foo.selfonly()
-    # foo.classmethod()
-    # foo.staticmethod()
-    # b()
-    # b()
+    foo = Foo('joe')
+    foo.bar()
+    foo.selfonly()
+    foo.classmethod()
+    foo.staticmethod()
+    foo.changename()  # changes name everywhere because repr is called at printing time
+    foo.bar()
+    b()
+
+    imported.imported_func()
+    imported.imported_func(z = 'kangaroo')
 
 
 def b():
-    # print('IN B', hash(inspect.currentframe()))
     print('b')
     c()
-    # for x in range(2):
-    #     c()
-    # c()
+    c()
 
 
 def c():
-    # print('IN C', hash(inspect.currentframe()))
     print('c')
 
 
@@ -73,12 +78,13 @@ if __name__ == '__main__':
     tracer.start()
     a()
     a()
-    # recurse(4)
+    for _ in range(5):
+        c()
+    recurse(4)
     tracer.stop()
 
     print('IF NAME MAIN AFTER WITH', hash(inspect.currentframe()))
 
-    # print(tracer.function_calls)
     print("\n===== REPORT =====\n")
     with open('report.html', mode = 'w', encoding = 'utf-8') as f:
         f.write(tracer.report_html())

@@ -5,6 +5,7 @@ import time
 
 
 def get_id():
+    """A generator that returns an auto-incrementing integer."""
     id = 0
     while True:
         yield id
@@ -34,12 +35,7 @@ class Node:
         return self.frame_hash
 
     def text(self):
-        pre = ''
-        if 'self' in self.func_args:
-            pre = repr(self.func_args['self']) + '.'
-        elif 'cls' in self.func_args:
-            pre = self.func_args['cls'].__name__ + '.'
-
+        pre = self.get_pre()
         args = ', '.join(
             fr'{arg} = {repr(val)}'.replace('\n', '')
             for arg, val
@@ -50,13 +46,8 @@ class Node:
         return fr'{pre}{get_function_name(self.frame)}({args})'
 
     def html(self):
-        pre = ''
-        if 'self' in self.func_args:
-            pre = repr(self.func_args['self']) + '.'
-        elif 'cls' in self.func_args:
-            pre = self.func_args['cls'].__name__ + '.'
-
-        args = 'Arguments: ' + ', '.join(
+        pre = self.get_pre()
+        args = ', '.join(
             fr'{arg} = {repr(val)}'.replace('\n', '')
             for arg, val
             in reversed(tuple(self.func_args.items()))  # local namespace seems to be populated in reverse for some reason
@@ -65,11 +56,25 @@ class Node:
         args = escape_html(args)
 
         own_time = self.elapsed_time - sum(child.elapsed_time for child in self.children)
-        time_str = f'Elapsed: {self.elapsed_time:6f} s | Own: {own_time:6f} s'
+        timing_str = f'Elapsed: {self.elapsed_time:6f} s | Own: {own_time:6f} s'
 
-        inner = escape_html(f'{pre}{get_function_name(self.frame)}')
-        title = f'{self.frame.f_code.co_filename}:{self.frame.f_code.co_firstlineno}&#013;{time_str}&#013;{args}'
+        inner = escape_html(f'{pre}{get_function_name(self.frame)}({args})')
+        title = '&#013;'.join((
+            get_function_name(self.frame),
+            f'{self.frame.f_code.co_filename}:{self.frame.f_code.co_firstlineno}',
+            timing_str,
+            f'Arguments: {args}',
+        ))
         return fr'<span title = "{title}">{inner}</span>'
+
+    def get_pre(self):
+        pre = ''
+        if 'self' in self.func_args:  # method
+            pre = repr(self.func_args['self']) + '.'
+        elif 'cls' in self.func_args:  # classmethod
+            pre = self.func_args['cls'].__name__ + '.'
+
+        return pre
 
     def report_text(self):
         lines = self._lines_text()
@@ -227,6 +232,7 @@ class Tracer:
             STYLE,
             '<body>',
             '<h1>Hephaestus Report</h1><br>',
+            f'<h2>for {sys.modules["__main__"].__file__}</h2><br>',
             '<ol class="tree">',
             body,
             '</ol>',
